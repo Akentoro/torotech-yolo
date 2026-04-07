@@ -1,5 +1,5 @@
 """
-ToroTech YOLO Inference Service — v2
+ToroTech YOLO Inference Service — v2.1
 Run on 4090 GPU machine, serve HTTP API for equipment PCs.
 
 Changes from v1:
@@ -9,6 +9,9 @@ Changes from v1:
   - upload validation (10MB limit, image type check)
   - path traversal protection on project_id
   - ONNX export: opset 12 → 17
+  v2.1:
+  - OpenCV refine pipeline (optional, config driven)
+  - angle, contour_area, rectangularity, refined fields in response
 
 Usage:
     python server.py
@@ -30,12 +33,18 @@ from pathlib import Path
 
 import yaml
 import torch
+import numpy as np
 from PIL import Image
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from ultralytics import YOLO
 
-app = FastAPI(title="ToroTech YOLO Inference Service", version="2.0.0")
+# Add parent to path for pipeline/opencv imports
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from pipeline.detect_pipeline import DetectPipeline
+
+app = FastAPI(title="ToroTech YOLO Inference Service", version="2.1.0")
 
 # --- Global State ---
 _models: OrderedDict[str, YOLO] = OrderedDict()
@@ -51,19 +60,25 @@ _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 _ALLOWED_TYPES = {"image/jpeg", "image/png", "image/bmp", "image/tiff"}
 _PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 
+# Pipeline: YOLO → (optional) OpenCV refine → API response
+_pipeline: DetectPipeline | None = None
+
 
 def _root() -> Path:
     return Path(__file__).parent.parent
 
 
 def load_config():
-    global _config, _start_time
+    global _config, _start_time, _pipeline
     cfg_path = Path(__file__).parent / "config" / "server_config.yaml"
     if cfg_path.exists():
         _config = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     else:
         _config = {"port": 8100, "default_project": "robot_test_c4"}
     _start_time = time.time()
+
+    # Init pipeline (YOLO → optional OpenCV refine)
+    _pipeline = DetectPipeline(config=_config.get("opencv_refine", {}))
 
 
 def _validate_project_id(project_id: str) -> str:
@@ -189,11 +204,12 @@ async def detect(
                 status_code=504,
             )
 
-    objects = []
+    # Parse YOLO results
+    yolo_objects = []
     for r in results:
         for box in r.boxes:
             x1, y1, x2, y2 = box.xyxy[0].tolist()
-            objects.append({
+            yolo_objects.append({
                 "class_id": int(box.cls[0]),
                 "class_name": r.names[int(box.cls[0])],
                 "confidence": round(float(box.conf[0]), 4),
@@ -208,6 +224,12 @@ async def detect(
                 "width": round(x2 - x1, 1),
                 "height": round(y2 - y1, 1),
             })
+
+    # Pipeline: YOLO objects → (optional) OpenCV refine → API response
+    image_np = np.array(img)
+    if image_np.ndim == 3 and image_np.shape[2] == 3:
+        image_np = image_np[:, :, ::-1]  # RGB → BGR for OpenCV
+    objects = _pipeline.process(image_np, yolo_objects)
 
     elapsed = (time.perf_counter() - t0) * 1000
     return {
