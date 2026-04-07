@@ -1,0 +1,12 @@
+# robot_test_c4 — YOLO dataset config
+# Update 'path' to match your 4090 machine's absolute path
+
+path: /home/user/torotech-yolo/datasets/robot_test_c4  # CHANGE THIS
+train: images/train
+val: images/val
+
+nc: 3
+names:
+  0: box
+  1: red_dot
+  2: pcba

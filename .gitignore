@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+env/
+
+# YOLO training artifacts
+runs/
+wandb/
+
+# Datasets (too large for git)
+datasets/
+!datasets/.gitkeep
+
+# Models (use GitHub Releases or git-lfs)
+models/*.pt
+models/*.onnx
+!models/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log

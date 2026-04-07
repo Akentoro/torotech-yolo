@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DetectRequest",
+  "description": "POST /detect multipart form fields",
+  "type": "object",
+  "properties": {
+    "file": { "type": "string", "format": "binary", "description": "Image file (JPG/PNG/BMP)" },
+    "project": { "type": "string", "description": "Project ID", "default": "robot_test_c4" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5, "description": "Confidence threshold" }
+  },
+  "required": ["file"]
+}
