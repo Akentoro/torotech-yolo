@@ -32,9 +32,13 @@
           "center_x": { "type": "number" },
           "center_y": { "type": "number" },
           "width": { "type": "number", "description": "bbox 寬度 (px)" },
-          "height": { "type": "number", "description": "bbox 高度 (px)" }
+          "height": { "type": "number", "description": "bbox 高度 (px)" },
+          "angle": { "type": "number", "description": "OpenCV MinAreaRect 旋轉角度 (degrees, -90~0)。refine=false 時為 0" },
+          "contour_area": { "type": "number", "description": "OpenCV 輪廓面積 (px²)。refine=false 時為 0" },
+          "rectangularity": { "type": "number", "description": "矩形度 (0~1)。refine=false 時為 0" },
+          "refined": { "type": "boolean", "description": "是否經過 OpenCV 精修。false = 只有 YOLO 粗定位" }
         },
-        "required": ["class_id", "class_name", "confidence", "bbox", "center_x", "center_y", "width", "height"]
+        "required": ["class_id", "class_name", "confidence", "bbox", "center_x", "center_y", "width", "height", "angle", "refined"]
       }
     },
     "image_size": {
@@ -58,6 +62,14 @@
       "ADDED: 'image_size' — 原始圖片尺寸（pixel→robot 座標轉換需要）",
       "ADDED: 'width', 'height' — bbox 尺寸（省去 C# 端計算）",
       "PARAMS: project/confidence/version 改為 Form field（非 Query param）"
+    ],
+    "v2.1": [
+      "ADDED: 'angle' — OpenCV MinAreaRect 旋轉角度 (degrees)，精修後有值",
+      "ADDED: 'contour_area' — OpenCV 輪廓面積",
+      "ADDED: 'rectangularity' — 矩形度 0~1",
+      "ADDED: 'refined' — bool，是否經過 OpenCV 精修",
+      "ADDED: server_config.yaml 'opencv_refine' 區段控制開關",
+      "NOTE: center_x/center_y 精修後精度從 ±5px 提升到 ±0.5px"
     ]
   }
 }
