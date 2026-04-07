@@ -1,8 +1,14 @@
+# Core
 ultralytics>=8.3.0
 fastapi>=0.115.0
 uvicorn>=0.34.0
 python-multipart>=0.0.18
 pyyaml>=6.0
-onnx>=1.17.0
-onnxruntime-gpu>=1.20.0
 Pillow>=10.0.0
+
+# ONNX export
+onnx>=1.15.0
+onnxruntime-gpu>=1.17.0
+
+# Note: PyTorch with CUDA must be installed separately:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121

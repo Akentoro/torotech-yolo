@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ModelsResponse",
+  "description": "GET /models JSON response",
+  "type": "object",
+  "properties": {
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "project_id": { "type": "string" },
+          "active_version": { "type": ["string", "null"] },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "version": { "type": "string" },
+                "has_pt": { "type": "boolean" },
+                "has_onnx": { "type": "boolean" },
+                "mAP50": { "type": ["number", "null"] },
+                "classes": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["version", "has_pt", "has_onnx"]
+            }
+          }
+        },
+        "required": ["project_id", "active_version", "versions"]
+      }
+    }
+  },
+  "required": ["projects"]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HealthResponse",
+  "description": "GET /health JSON response",
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["ok"] },
+    "gpu": { "type": "boolean" },
+    "gpu_name": { "type": ["string", "null"] },
+    "gpu_memory_used_mb": { "type": ["integer", "null"] },
+    "gpu_memory_total_mb": { "type": ["integer", "null"] },
+    "loaded_models": { "type": "array", "items": { "type": "string" } },
+    "training_active": { "type": "boolean" },
+    "uptime_s": { "type": "integer" }
+  },
+  "required": ["status", "gpu"]
+}

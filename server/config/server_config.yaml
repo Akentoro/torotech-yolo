@@ -1,8 +1,9 @@
-# YOLO Inference Service Config
+# YOLO Inference Service Config — v2
 port: 8100
 default_project: robot_test_c4
 log_level: info
 
 # GPU settings
-device: 0          # CUDA device index, -1 for CPU
-half_precision: false  # FP16 (faster on 4090, may reduce accuracy slightly)
+device: 0              # CUDA device index, -1 for CPU
+half_precision: false   # FP16 (faster on 4090, may reduce accuracy slightly)
+max_loaded_models: 3   # LRU cache: max models in GPU memory
