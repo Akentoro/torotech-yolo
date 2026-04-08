@@ -1,17 +1,9 @@
 """
-ToroTech YOLO Inference Service — v2.1
+ToroTech YOLO Inference Service — v3 (pure YOLO, no OpenCV)
 Run on 4090 GPU machine, serve HTTP API for equipment PCs.
 
-Changes from v1:
-  - detect params: Query → Form (multipart compatible)
-  - response: 'class' → 'class_name' + added class_id, model_version, image_size, width, height
-  - async inference with GPU semaphore (non-blocking /health while GPU busy)
-  - upload validation (10MB limit, image type check)
-  - path traversal protection on project_id
-  - ONNX export: opset 12 → 17
-  v2.1:
-  - OpenCV refine pipeline (optional, config driven)
-  - angle, contour_area, rectangularity, refined fields in response
+Single responsibility: receive image → YOLO inference → return JSON.
+OpenCV refinement and pipeline orchestration are handled by VisionFlow.
 
 Usage:
     python server.py
@@ -33,22 +25,16 @@ from pathlib import Path
 
 import yaml
 import torch
-import numpy as np
 from PIL import Image
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from ultralytics import YOLO
 
-# Add parent to path for pipeline/opencv imports
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from pipeline.detect_pipeline import DetectPipeline
-
-app = FastAPI(title="ToroTech YOLO Inference Service", version="2.1.0")
+app = FastAPI(title="ToroTech YOLO Inference Service", version="3.0.0")
 
 # --- Global State ---
 _models: OrderedDict[str, YOLO] = OrderedDict()
-_model_versions: dict[str, str] = {}  # project → active version
+_model_versions: dict[str, str] = {}
 _config: dict = {}
 _start_time: float = 0
 
@@ -60,25 +46,19 @@ _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 _ALLOWED_TYPES = {"image/jpeg", "image/png", "image/bmp", "image/tiff"}
 _PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 
-# Pipeline: YOLO → (optional) OpenCV refine → API response
-_pipeline: DetectPipeline | None = None
-
 
 def _root() -> Path:
     return Path(__file__).parent.parent
 
 
 def load_config():
-    global _config, _start_time, _pipeline
+    global _config, _start_time
     cfg_path = Path(__file__).parent / "config" / "server_config.yaml"
     if cfg_path.exists():
         _config = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     else:
         _config = {"port": 8100, "default_project": "robot_test_c4"}
     _start_time = time.time()
-
-    # Init pipeline (YOLO → optional OpenCV refine)
-    _pipeline = DetectPipeline(config=_config.get("opencv_refine", {}))
 
 
 def _validate_project_id(project_id: str) -> str:
@@ -99,11 +79,9 @@ def get_model(project: str) -> tuple[YOLO, str]:
     if not models_dir.exists():
         raise FileNotFoundError(f"No model found for project: {project}")
 
-    # Find best model, preferring versioned directories
     version = "v1"
     pt_path = None
 
-    # Try versioned structure first: models/projects/{id}/v1/best.pt
     for v_dir in sorted(models_dir.iterdir(), reverse=True):
         if v_dir.is_dir() and v_dir.name.startswith("v"):
             candidate = v_dir / "best.pt"
@@ -112,24 +90,19 @@ def get_model(project: str) -> tuple[YOLO, str]:
                 version = v_dir.name
                 break
 
-    # Fallback: legacy structure models/projects/{id}/train/weights/best.pt
     if pt_path is None:
         legacy = sorted(models_dir.rglob("best.pt"))
         if legacy:
             pt_path = legacy[-1]
-            version = "v1"
 
-    # Fallback: ONNX
     if pt_path is None:
         onnx_paths = sorted(models_dir.rglob("best.onnx"))
         if onnx_paths:
             pt_path = onnx_paths[-1]
-            version = "v1"
 
     if pt_path is None:
         raise FileNotFoundError(f"No model found for project: {project}")
 
-    # Evict LRU if > 3 models loaded
     max_models = _config.get("max_loaded_models", 3)
     while len(_models) >= max_models:
         evicted_key, _ = _models.popitem(last=False)
@@ -147,23 +120,16 @@ async def detect(
     confidence: float = Form(default=0.5, ge=0.0, le=1.0),
     version: str = Form(default=None),
 ):
-    """Detect objects in an uploaded image.
-
-    BREAKING from v1:
-      - params are Form fields (not Query params)
-      - response uses class_name (not class), adds class_id, model_version, image_size
-    """
+    """Detect objects in an uploaded image. Pure YOLO — no OpenCV refinement."""
     t0 = time.perf_counter()
     proj = project or _config.get("default_project", "robot_test_c4")
 
-    # Validate content type
     if file.content_type and file.content_type not in _ALLOWED_TYPES:
         return JSONResponse(
             {"success": False, "error": f"Unsupported image type: {file.content_type}"},
             status_code=400,
         )
 
-    # Read with size limit
     img_bytes = await file.read()
     if len(img_bytes) > _MAX_UPLOAD_BYTES:
         return JSONResponse(
@@ -171,7 +137,6 @@ async def detect(
             status_code=413,
         )
 
-    # Validate image
     try:
         img = Image.open(io.BytesIO(img_bytes))
         img.verify()
@@ -186,7 +151,6 @@ async def detect(
     except (FileNotFoundError, ValueError) as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=404)
 
-    # Async inference: queue on GPU semaphore, run in thread pool
     device = _config.get("device", 0)
     async with _infer_semaphore:
         loop = asyncio.get_event_loop()
@@ -204,12 +168,11 @@ async def detect(
                 status_code=504,
             )
 
-    # Parse YOLO results
-    yolo_objects = []
+    objects = []
     for r in results:
         for box in r.boxes:
             x1, y1, x2, y2 = box.xyxy[0].tolist()
-            yolo_objects.append({
+            objects.append({
                 "class_id": int(box.cls[0]),
                 "class_name": r.names[int(box.cls[0])],
                 "confidence": round(float(box.conf[0]), 4),
@@ -224,12 +187,6 @@ async def detect(
                 "width": round(x2 - x1, 1),
                 "height": round(y2 - y1, 1),
             })
-
-    # Pipeline: YOLO objects → (optional) OpenCV refine → API response
-    image_np = np.array(img)
-    if image_np.ndim == 3 and image_np.shape[2] == 3:
-        image_np = image_np[:, :, ::-1]  # RGB → BGR for OpenCV
-    objects = _pipeline.process(image_np, yolo_objects)
 
     elapsed = (time.perf_counter() - t0) * 1000
     return {
@@ -259,7 +216,6 @@ async def list_models():
                             "has_pt": (v_dir / "best.pt").exists(),
                             "has_onnx": (v_dir / "best.onnx").exists(),
                         })
-                # Legacy: check train/weights/ if no versioned dirs
                 if not versions:
                     versions.append({
                         "version": "v1",
@@ -295,5 +251,5 @@ if __name__ == "__main__":
 
     load_config()
     port = _config.get("port", 8100)
-    print(f"Starting YOLO service v2 on port {port}...")
+    print(f"Starting YOLO service v3 (pure YOLO) on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)

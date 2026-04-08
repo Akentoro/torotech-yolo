@@ -1,4 +1,4 @@
-# YOLO Inference Service Config — v2.1
+# YOLO Inference Service Config — v3 (pure YOLO)
 port: 8100
 default_project: robot_test_c4
 log_level: info
@@ -8,11 +8,5 @@ device: 0              # CUDA device index, -1 for CPU
 half_precision: false   # FP16 (faster on 4090, may reduce accuracy slightly)
 max_loaded_models: 3   # LRU cache: max models in GPU memory
 
-# OpenCV refine — YOLO bbox 內做 sub-pixel 精修 + 角度偵測
-# 設為 false 則只回 YOLO 原始結果（angle=0, refined=false）
-opencv_refine:
-  enabled: true
-  method: adaptive       # adaptive / canny / otsu
-  margin_px: 10          # bbox 外擴 margin (px)
-  min_area: 500          # 最小輪廓面積 (px²)，太小的忽略
-  blur_kernel: 5         # GaussianBlur kernel size
+# NOTE: opencv_refine section removed in v3.
+# OpenCV refinement is now handled by VisionFlow's VisionOrchestratorActor.
